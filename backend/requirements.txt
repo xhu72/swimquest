@@ -1,0 +1,11 @@
+django>=5.2,<6.1
+djangorestframework
+djangorestframework-simplejwt
+django-cors-headers
+django-environ
+drf-spectacular
+whitenoise
+gunicorn
+pytest
+pytest-django
+factory-boy
