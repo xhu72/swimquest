@@ -9,23 +9,26 @@ https://docs.djangoproject.com/en/6.0/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
-
+from datetime import timedelta
 from pathlib import Path
 
+import environ
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+env = environ.Env(DEBUG=(bool, False))
+environ.Env.read_env(BASE_DIR / ".env")
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-m*rleez-(&uj)bq=w#%gt^sh3=b(_xik17iyj$ox#75%m9u&yf"
+SECRET_KEY = env("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = env("DEBUG")
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
 
 # Application definition
@@ -37,10 +40,19 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    # third-party
+    "rest_framework",                           #Builds REST APIs
+    "rest_framework_simplejwt.token_blacklist", #Blocks old refresh tokens
+    "corsheaders",                              #Controls cross-origin requests
+    "drf_spectacular",                          #Generates API documentation
+    # our apps
+    "accounts",                                 #Django app, responsible for user registration, login, and account management.
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",  #Serves static files
+    "corsheaders.middleware.CorsMiddleware",       #Handles cross-origin requests
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -71,11 +83,18 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
+DATA_DIR = BASE_DIR / "data"
+DATA_DIR.mkdir(exist_ok=True)
 
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "NAME": DATA_DIR / "db.sqlite3",
+        "OPTIONS": {
+            "init_command": "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;",#Allows readers and writers to work more efficiently, Balances performance and data safety
+            "transaction_mode": "IMMEDIATE",      #Starts transactions using SQLite's IMMEDIATE mode
+            "timeout": 20,                        #Waits up to 20 seconds when the database is locked
+        },
     }
 }
 
@@ -104,7 +123,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = "UTC"
+TIME_ZONE = env("TIME_ZONE", default="UTC")
 
 USE_I18N = True
 
@@ -115,3 +134,35 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = "static/"
+
+STATIC_ROOT = BASE_DIR / "staticfiles"
+STATIC_ROOT.mkdir(exist_ok=True)
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Django REST Framework: every endpoint needs login unless we open it on purpose
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication", #Uses JWT (JSON Web Token) to authenticate users
+    ],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"], #users must be logged in to access API endpoints
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema", #Uses drf-spectacular to generate an OpenAPI schema for your API.
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 20, #Returns API results in pages of 20 records.
+    "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.ScopedRateThrottle"],
+    "DEFAULT_THROTTLE_RATES": {"register": "5/hour", "login": "10/minute"}, #Limits how frequently users can make certain API requests.
+}
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15), #Access token expires after 15 minutes
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),    #Refresh token expires after 7 days
+    "ROTATE_REFRESH_TOKENS": True,                  #Issues a new refresh token when refreshing
+    "BLACKLIST_AFTER_ROTATION": True,               #Blacklists the old refresh token after rotation
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "SwimQuest API",
+    "VERSION": "1.0.0",
+    "SERVE_PERMISSIONS": ["rest_framework.permissions.AllowAny"],
+}
+
+CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[]) #Cross-Origin Resource Sharing.
